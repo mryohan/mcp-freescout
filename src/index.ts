@@ -30,7 +30,7 @@ const WORKING_DIRECTORY = process.env.WORKING_DIRECTORY || process.cwd();
 // Helper function to check if GitHub CLI is available
 function isGhAvailable(): boolean {
   try {
-    execSync('gh --version', { 
+    execSync('gh --version', {
       stdio: 'pipe',
       timeout: 5000
     });
@@ -45,19 +45,19 @@ function getGitHubRepo(): string | undefined {
   if (process.env.GITHUB_REPO) {
     return process.env.GITHUB_REPO;
   }
-  
+
   if (!isGhAvailable()) {
     return undefined;
   }
-  
+
   try {
     // Use gh to get repo info - this is more reliable than parsing git remotes
-    const repoInfo = execSync('gh repo view --json nameWithOwner', { 
+    const repoInfo = execSync('gh repo view --json nameWithOwner', {
       cwd: WORKING_DIRECTORY,
       encoding: 'utf-8',
       stdio: 'pipe'
     }).trim();
-    
+
     const parsed = JSON.parse(repoInfo);
     return parsed.nameWithOwner;
   } catch (error) {
@@ -69,7 +69,7 @@ function getGitHubRepo(): string | undefined {
 // Helper function to check if Git operations are available  
 function isGitAvailable(): boolean {
   try {
-    execSync('git --version', { 
+    execSync('git --version', {
       stdio: 'pipe',
       timeout: 5000
     });
@@ -377,7 +377,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           ticketId,
           args.includeThreads !== false
         );
-        
+
         return {
           content: [
             {
@@ -392,7 +392,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const ticketId = api.parseTicketInput(args.ticket as string);
         const conversation = await api.getConversation(ticketId, true);
         const analysis = analyzer.analyzeConversation(conversation);
-        
+
         return {
           content: [
             {
@@ -406,14 +406,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'freescout_add_note': {
         const ticketId = api.parseTicketInput(args.ticket as string);
         const userId = args.userId || DEFAULT_USER_ID;
-        
+
         const thread = await api.addThread(
           ticketId,
           'note',
           args.note as string,
           userId as number
         );
-        
+
         return {
           content: [
             {
@@ -426,21 +426,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case 'freescout_update_ticket': {
         const ticketId = api.parseTicketInput(args.ticket as string);
-        
+
         const updates: any = {
           byUser: DEFAULT_USER_ID,
         };
-        
+
         if (args.status) {
           updates.status = args.status;
         }
-        
+
         if (args.assignTo) {
           updates.assignTo = args.assignTo;
         }
-        
+
         const updated = await api.updateConversation(ticketId, updates);
-        
+
         return {
           content: [
             {
@@ -455,10 +455,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const ticketId = api.parseTicketInput(args.ticket as string);
         const replyText = args.replyText as string;
         const userId = args.userId as number || DEFAULT_USER_ID;
-        
+
         try {
           const draftThread = await api.createDraftReply(ticketId, replyText, userId);
-          
+
           return {
             content: [
               {
@@ -472,15 +472,47 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
       }
 
+      case 'freescout_create_ticket': {
+        const subject = args.subject as string;
+        const text = args.text as string;
+        const email = args.email as string;
+        const mailboxId = args.mailboxId as number;
+
+        try {
+          const conversation = await api.createConversation(
+            subject,
+            text,
+            email,
+            mailboxId,
+            {
+              firstName: args.firstName as string,
+              lastName: args.lastName as string,
+              phone: args.phone as string,
+            }
+          );
+
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `✅ Ticket created successfully!\n\nTicket ID: ${conversation.id}\nTicket Number: ${conversation.number}\nSubject: ${conversation.subject}\nURL: ${FREESCOUT_URL}/conversation/${conversation.id}`,
+              },
+            ],
+          };
+        } catch (error: any) {
+          throw new Error(`Failed to create ticket: ${error.message}`);
+        }
+      }
+
       case 'freescout_get_ticket_context': {
         const ticketId = api.parseTicketInput(args.ticket as string);
         const conversation = await api.getConversation(ticketId, true);
         const analysis = analyzer.analyzeConversation(conversation);
-        
+
         const threads = conversation._embedded?.threads || [];
         const customerMessages = threads.filter(t => t.type === 'customer');
         const teamMessages = threads.filter(t => t.type === 'message' || t.type === 'note');
-        
+
         const context = {
           ticketId,
           customer: {
@@ -505,7 +537,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             rootCause: analysis.rootCause,
           },
         };
-        
+
         return {
           content: [
             {
@@ -520,9 +552,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         // Always default to 'published' state unless user explicitly requests 'deleted'
         const state = args.state as string || 'published';
         const query = args.query as string;
-        
+
         let results;
-        
+
         // If searching for unassigned tickets, use the list endpoint which properly supports filtering
         if (query.includes('assignee:null') || query.includes('unassigned')) {
           results = await api.listConversations(
@@ -538,7 +570,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             state,
             args.mailboxId as number
           );
-          
+
           /**
            * LIMITATION: The FreeScout searchConversations API endpoint does not respect
            * the 'state' parameter (published/draft). Unlike the list endpoint, which
@@ -562,21 +594,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               (conversation: any) => conversation.state === 'published'
             );
             const filteredCount = results._embedded.conversations.length;
-            
+
             console.error(
               `[WARNING] searchConversations endpoint does not respect 'state' parameter. ` +
               `Applied client-side filtering for state='${state}'. ` +
               `Original count: ${originalCount}, Filtered count: ${filteredCount}. ` +
               `This may be expensive for large result sets and incomplete with pagination.`
             );
-            
+
             // Update the total count to reflect filtered results
             if (results.page) {
               results.page.total_elements = results._embedded.conversations.length;
             }
           }
         }
-        
+
         return {
           content: [
             {
@@ -589,7 +621,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case 'freescout_get_mailboxes': {
         const mailboxes = await api.getMailboxes();
-        
+
         return {
           content: [
             {
@@ -607,7 +639,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               {
                 type: 'text',
                 text: '⚠️ Git is not available in this environment. Please create the worktree manually:\n\n' +
-                      `git worktree add worktrees/ticket-${args.ticketId} -b ${args.branchName || `fix/freescout-${args.ticketId}`} ${args.baseBranch || 'master'}`,
+                  `git worktree add worktrees/ticket-${args.ticketId} -b ${args.branchName || `fix/freescout-${args.ticketId}`} ${args.baseBranch || 'master'}`,
               },
             ],
           };
@@ -617,31 +649,31 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const branchName = args.branchName || `fix/freescout-${ticketId}`;
         const baseBranch = args.baseBranch || 'master';
         const worktreeDir = `${WORKING_DIRECTORY}/worktrees/ticket-${ticketId}`;
-        
+
         try {
           // Create worktrees directory if it doesn't exist
-          execSync(`mkdir -p "${WORKING_DIRECTORY}/worktrees"`, { 
+          execSync(`mkdir -p "${WORKING_DIRECTORY}/worktrees"`, {
             cwd: WORKING_DIRECTORY,
             stdio: 'pipe'
           });
-          
+
           // Create worktree
           execSync(
             `git worktree add "${worktreeDir}" -b "${branchName}" ${baseBranch}`,
-            { 
+            {
               cwd: WORKING_DIRECTORY,
               stdio: 'pipe'
             }
           );
-          
+
           // Add to .gitignore if needed
           try {
-            const gitignore = execSync(`cat "${WORKING_DIRECTORY}/.gitignore"`, { 
+            const gitignore = execSync(`cat "${WORKING_DIRECTORY}/.gitignore"`, {
               encoding: 'utf-8',
               stdio: 'pipe'
             });
             if (!gitignore.includes('worktrees/')) {
-              execSync(`echo "worktrees/" >> "${WORKING_DIRECTORY}/.gitignore"`, { 
+              execSync(`echo "worktrees/" >> "${WORKING_DIRECTORY}/.gitignore"`, {
                 cwd: WORKING_DIRECTORY,
                 stdio: 'pipe'
               });
@@ -649,7 +681,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           } catch {
             // .gitignore might not exist
           }
-          
+
           return {
             content: [
               {
@@ -684,13 +716,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         const ticketId = args.ticketId as string;
         const worktreeDir = `${WORKING_DIRECTORY}/worktrees/ticket-${ticketId}`;
-        
+
         try {
-          execSync(`git worktree remove "${worktreeDir}"`, { 
+          execSync(`git worktree remove "${worktreeDir}"`, {
             cwd: WORKING_DIRECTORY,
             stdio: 'pipe'
           });
-          
+
           return {
             content: [
               {
@@ -750,24 +782,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
           // Create the PR using GitHub CLI (no token needed - gh handles auth)
           const args_array = ['pr', 'create'];
-          
+
           if (GITHUB_REPO) {
             args_array.push('--repo', GITHUB_REPO);
           }
-          
+
           args_array.push('--title', title);
           args_array.push('--body', enhancedBody);
           args_array.push('--base', baseBranch);
-          
+
           if (draft) {
             args_array.push('--draft');
           }
-          
+
           if (branch) {
             args_array.push('--head', branch);
           }
-          
-          const result = execSync(`gh ${args_array.map(arg => `"${arg.replace(/"/g, '\\"')}"`).join(' ')}`, { 
+
+          const result = execSync(`gh ${args_array.map(arg => `"${arg.replace(/"/g, '\\"')}"`).join(' ')}`, {
             cwd: WORKING_DIRECTORY,
             encoding: 'utf-8',
             stdio: 'pipe'
@@ -793,7 +825,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               ],
             };
           }
-          
+
           return {
             content: [
               {
@@ -809,7 +841,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const ticketId = api.parseTicketInput(args.ticket as string);
         const conversation = await api.getConversation(ticketId, true);
         const analysis = analyzer.analyzeConversation(conversation);
-        
+
         let worktreeInfo = '';
         if (args.autoCreateWorktree !== false) {
           if (!isGitAvailable()) {
@@ -819,19 +851,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             try {
               const branchName = `fix/freescout-${ticketId}`;
               const worktreeDir = `${WORKING_DIRECTORY}/worktrees/ticket-${ticketId}`;
-              
-              execSync(`mkdir -p "${WORKING_DIRECTORY}/worktrees"`, { 
+
+              execSync(`mkdir -p "${WORKING_DIRECTORY}/worktrees"`, {
                 cwd: WORKING_DIRECTORY,
                 stdio: 'pipe'
               });
               execSync(
                 `git worktree add "${worktreeDir}" -b "${branchName}" master`,
-                { 
+                {
                   cwd: WORKING_DIRECTORY,
                   stdio: 'pipe'
                 }
               );
-              
+
               worktreeInfo = `\n\n## Git Worktree Created\n- Branch: ${branchName}\n- Location: ${worktreeDir}`;
             } catch (error: any) {
               const branchName = `fix/freescout-${ticketId}`;
@@ -839,7 +871,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }
           }
         }
-        
+
         const plan: ImplementationPlan = {
           issue: analysis.issueDescription,
           rootCause: analysis.rootCause || 'To be determined',
@@ -848,7 +880,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           alternativeApproaches: [],
           hasBreakingChanges: false,
         };
-        
+
         const output = `# FreeScout Ticket #${ticketId} Implementation Plan
 
 ## Customer Information

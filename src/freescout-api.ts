@@ -1,8 +1,8 @@
 import fetch from 'node-fetch';
-import type { 
-  FreeScoutConversation, 
+import type {
+  FreeScoutConversation,
   FreeScoutApiResponse,
-  FreeScoutThread 
+  FreeScoutThread
 } from './types.js';
 
 export class FreeScoutAPI {
@@ -22,25 +22,25 @@ export class FreeScoutAPI {
     let html = text
       .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
       .replace(/__(.*?)__/g, '<strong>$1</strong>');
-    
+
     // Convert italic text: *text* or _text_ -> <em>text</em> (avoid conflicts with bold)
     html = html.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>');
     html = html.replace(/(?<!_)_([^_]+)_(?!_)/g, '<em>$1</em>');
-    
+
     // Convert code: `text` -> <code>text</code>
     html = html.replace(/`(.*?)`/g, '<code>$1</code>');
-    
+
     // Process the entire text to handle lists that span paragraph breaks
     const lines = html.split('\n');
     const processedLines = [];
     let inOrderedList = false;
     let inUnorderedList = false;
     let currentParagraph = [];
-    
+
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const trimmedLine = line.trim();
-      
+
       // Check for empty lines (paragraph breaks)
       if (!trimmedLine) {
         // Check if the next non-empty line is also a list item
@@ -48,12 +48,12 @@ export class FreeScoutAPI {
           const nextTrimmed = nextLine.trim();
           return nextTrimmed && (/^\d+\.\s+/.test(nextTrimmed) || /^[-*]\s+/.test(nextTrimmed));
         });
-        
+
         // If we're in a list and the next item is also a list item, continue the list
         if ((inOrderedList || inUnorderedList) && nextListItemIndex !== -1) {
           continue; // Skip this empty line but keep the list open
         }
-        
+
         // Close any current lists before starting new paragraph
         if (inOrderedList) {
           processedLines.push('</ol>');
@@ -63,18 +63,18 @@ export class FreeScoutAPI {
           processedLines.push('</ul>');
           inUnorderedList = false;
         }
-        
+
         // Process accumulated paragraph
         if (currentParagraph.length > 0) {
           const paragraphContent = currentParagraph.join('<br>');
           processedLines.push(`<p>${paragraphContent}</p>`);
           currentParagraph = [];
         }
-        
+
         // Skip extra empty lines
         continue;
       }
-      
+
       // Check for numbered list items
       if (/^\d+\.\s+/.test(trimmedLine)) {
         // Finish any current paragraph
@@ -83,7 +83,7 @@ export class FreeScoutAPI {
           processedLines.push(`<p>${paragraphContent}</p>`);
           currentParagraph = [];
         }
-        
+
         if (!inOrderedList) {
           if (inUnorderedList) {
             processedLines.push('</ul>');
@@ -103,7 +103,7 @@ export class FreeScoutAPI {
           processedLines.push(`<p>${paragraphContent}</p>`);
           currentParagraph = [];
         }
-        
+
         if (!inUnorderedList) {
           if (inOrderedList) {
             processedLines.push('</ol>');
@@ -126,22 +126,22 @@ export class FreeScoutAPI {
           processedLines.push('</ul>');
           inUnorderedList = false;
         }
-        
+
         // Add to current paragraph
         currentParagraph.push(trimmedLine);
       }
     }
-    
+
     // Close any remaining lists
     if (inOrderedList) processedLines.push('</ol>');
     if (inUnorderedList) processedLines.push('</ul>');
-    
+
     // Process any remaining paragraph
     if (currentParagraph.length > 0) {
       const paragraphContent = currentParagraph.join('<br>');
       processedLines.push(`<p>${paragraphContent}</p>`);
     }
-    
+
     return processedLines.join('\n\n');
   }
 
@@ -151,7 +151,7 @@ export class FreeScoutAPI {
     body?: any
   ): Promise<T> {
     const url = `${this.baseUrl}/api${path}`;
-    
+
     const headers: Record<string, string> = {
       'X-FreeScout-API-Key': this.apiKey,
     };
@@ -221,6 +221,51 @@ export class FreeScoutAPI {
     return this.addThread(ticketId, 'message', htmlText, userId, 'draft');
   }
 
+  async createConversation(
+    subject: string,
+    text: string,
+    email: string,
+    mailboxId: number,
+    options: {
+      firstName?: string;
+      lastName?: string;
+      phone?: string;
+      attachments?: string[];
+    } = {}
+  ): Promise<FreeScoutConversation> {
+    const body: any = {
+      type: 'email',
+      subject,
+      customer: {
+        email,
+        firstName: options.firstName,
+        lastName: options.lastName,
+        phone: options.phone,
+      },
+      mailboxId,
+      threads: [
+        {
+          type: 'customer',
+          text: this.markdownToHtml(text),
+          imported: true, // Mark as imported to prevent auto-reply loops if needed, or just standard creation
+        },
+      ],
+      imported: false, // Set to true if we don't want to trigger auto-replies
+    };
+
+    // If we have attachments, we'd need to handle them. 
+    // FreeScout API for creating conversation with attachments usually requires 
+    // uploading attachments first or sending them as base64/multipart.
+    // For now, we'll skip complex attachment handling in this iteration 
+    // unless the user specifically requested it.
+
+    return this.request<FreeScoutConversation>(
+      '/conversations',
+      'POST',
+      body
+    );
+  }
+
   async updateConversation(
     ticketId: string,
     updates: {
@@ -244,19 +289,19 @@ export class FreeScoutAPI {
   ): Promise<FreeScoutApiResponse<FreeScoutConversation>> {
     // Valid statuses as defined in the API
     const VALID_STATUSES = ['active', 'pending', 'closed', 'spam'];
-    
+
     const params = new URLSearchParams();
     if (query) params.append('query', query);
-    
-    
+
+
     // Handle state parameter
     if (state) params.append('state', state);
-    
+
     // Handle mailboxId (including 0) but not null/undefined
     if (mailboxId != null) {  // Checks for both null and undefined
       params.append('mailboxId', mailboxId.toString());
     }
-    
+
     // Handle status parameter
     if (status) {
       if (status === 'all') {
@@ -314,7 +359,7 @@ export class FreeScoutAPI {
       const ticketId = this.extractTicketIdFromUrl(input);
       if (ticketId) return ticketId;
     }
-    
+
     // Check if input is numeric (ticket ID)
     if (/^\d+$/.test(input.trim())) {
       return input.trim();
