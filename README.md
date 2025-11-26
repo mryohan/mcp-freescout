@@ -10,6 +10,7 @@ An MCP (Model Context Protocol) server for FreeScout helpdesk ticket management 
 - 🌳 **Git Integration**: Create and manage Git worktrees for ticket implementations
 - 🔄 **Full Workflow Support**: Complete ticket-to-PR workflow automation
 - 📊 **Search Capabilities**: Search and filter tickets across your FreeScout instance with mailbox filtering support
+- ✍🏻 **Create New Ticket**: Create new tickets to your FreeScout mailbox
 
 ## Installation
 
