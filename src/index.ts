@@ -799,7 +799,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             args_array.push('--head', branch);
           }
 
-          const result = execSync(`gh ${args_array.map(arg => `"${arg.replace(/"/g, '\\"')}"`).join(' ')}`, {
+          /**
+           * Escapes a string for safe use as a shell double-quoted argument.
+           * Escapes \ and " characters.
+           */
+          function shellEscapeArg(arg: string) {
+            // Escape backslashes first, then double quotes
+            return arg.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+          }
+
+          const result = execSync(`gh ${args_array.map(arg => `"${shellEscapeArg(arg)}"`).join(' ')}`, {
             cwd: WORKING_DIRECTORY,
             encoding: 'utf-8',
             stdio: 'pipe'
